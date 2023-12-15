@@ -614,7 +614,7 @@ class AthenaAdapter(SQLAdapter):
                     "MaxResults": 100,
                 }
                 # If the catalog is `awsdatacatalog` we don't need to pass CatalogId as boto3
-                # infers it from the account Id.
+                # infers it from the account ID.
                 catalog_id = get_catalog_id(data_catalog)
                 if catalog_id:
                     kwargs["CatalogId"] = catalog_id
