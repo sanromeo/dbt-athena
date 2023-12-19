@@ -1269,7 +1269,13 @@ class AthenaAdapter(SQLAdapter):
     def format_one_partition_key(self, partition_key: str) -> str:
         """Check if partition key uses Iceberg hidden partitioning"""
         hidden = re.search(r"^(hour|day|month|year)\((.+)\)", partition_key.lower())
-        return f"date_trunc('{hidden.group(1)}', {hidden.group(2)})" if hidden else partition_key.lower()
+        bucket = re.search(r"bucket\((.+),", partition_key.lower())
+        if hidden:
+            return f"date_trunc('{hidden.group(1)}', {hidden.group(2)})"
+        if bucket:
+            return bucket.group(1)
+        else:
+            return partition_key.lower()
 
     @staticmethod
     def _decimal_to_bytes(value: Decimal) -> bytes:
