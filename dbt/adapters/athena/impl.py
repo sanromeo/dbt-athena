@@ -2,16 +2,20 @@ import csv
 import os
 import posixpath as path
 import re
+import struct
 import tempfile
 from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, DecimalTuple
 from itertools import chain
 from textwrap import dedent
 from threading import Lock
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import agate
+import mmh3
 from botocore.exceptions import ClientError
 from mypy_boto3_athena.type_defs import DataCatalogTypeDef
 from mypy_boto3_glue.type_defs import (
@@ -118,6 +122,7 @@ class AthenaConfig(AdapterConfig):
 class AthenaAdapter(SQLAdapter):
     BATCH_CREATE_PARTITION_API_LIMIT = 100
     BATCH_DELETE_PARTITION_API_LIMIT = 25
+    INTEGER_MAX_VALUE_SIGNED_32_BIT = 0x7FFFFFFF
 
     ConnectionManager = AthenaConnectionManager
     Relation = AthenaRelation
@@ -1265,3 +1270,38 @@ class AthenaAdapter(SQLAdapter):
         """Check if partition key uses Iceberg hidden partitioning"""
         hidden = re.search(r"^(hour|day|month|year)\((.+)\)", partition_key.lower())
         return f"date_trunc('{hidden.group(1)}', {hidden.group(2)})" if hidden else partition_key.lower()
+
+    @staticmethod
+    def _decimal_to_bytes(value: Decimal) -> bytes:
+        dtuple: DecimalTuple = value.normalize().as_tuple()
+        digits, exponent = dtuple.digits, dtuple.exponent
+
+        if isinstance(exponent, int):
+            decimal_str = "".join(map(str, digits))
+            if exponent < 0:
+                decimal_str = decimal_str[:exponent] + "." + decimal_str[exponent:]
+            elif exponent > 0:
+                decimal_str = decimal_str + ("0" * exponent)
+        else:
+            # Handle special decimal values (NaN, sNaN, Infinity)
+            decimal_str = str(value)
+
+        return decimal_str.encode()
+
+    @available
+    def murmur3_hash(self, value: Any, num_buckets: int) -> Any:
+        if isinstance(value, int):  # int, long
+            hash_value = mmh3.hash(struct.pack("<q", value))
+        elif isinstance(value, (datetime, date)):  # date, time, timestamp, timestampz
+            timestamp = int(value.timestamp()) if isinstance(value, datetime) else int(value.strftime("%s"))
+            hash_value = mmh3.hash(struct.pack("<q", timestamp))
+        elif isinstance(value, (str, bytes)):  # string, fixed, binary
+            hash_value = mmh3.hash(value)
+        elif isinstance(value, Decimal):  # decimal
+            hash_value = mmh3.hash(self._decimal_to_bytes(value))
+        elif isinstance(value, UUID):  # uuid
+            hash_value = mmh3.hash(value.bytes)
+        else:
+            raise TypeError(f"Need to add support data type for hashing: {type(value)}")
+
+        return (hash_value & self.INTEGER_MAX_VALUE_SIGNED_32_BIT) % num_buckets

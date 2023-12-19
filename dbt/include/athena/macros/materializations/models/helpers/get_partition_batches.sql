@@ -20,12 +20,15 @@
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
-        {%- for col in row -%}
-
-
+        {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
-            {%- if col is none -%}
+            {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
+            {%- if bucket_match -%}
+                {# Handle bucketed partition #}
+                {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
+                {%- set value = bucket_num | string -%}
+            {%- elif col is none -%}
                 {%- set value = 'null' -%}
                 {%- set comp_func = ' is ' -%}
             {%- elif column_type == 'integer' or column_type is none -%}
@@ -39,8 +42,8 @@
             {%- else -%}
                 {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
             {%- endif -%}
-            {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-            {%- do single_partition.append(partition_key + comp_func + value) -%}
+            {%- set partition_key_formatted = adapter.format_one_partition_key(partition_key) -%}
+            {%- do single_partition.append(partition_key_formatted + comp_func + value) -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = single_partition | join(' and ') -%}
