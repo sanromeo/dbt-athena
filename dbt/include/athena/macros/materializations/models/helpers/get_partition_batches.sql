@@ -15,6 +15,7 @@
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
     {%- set partitions = {} -%}
+    {%- set bucket_values = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
 
@@ -28,10 +29,10 @@
                 {# Handle bucketed partition #}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set bucket_column = bucket_match[1] -%}
-                {%- if bucket_num not in partitions %}
-                    {%- do partitions.update({bucket_num: []}) %}
+                {%- if bucket_num not in bucket_values %}
+                    {%- do bucket_values.update({bucket_num: []}) %}
                 {%- endif %}
-                {%- do partitions[bucket_num].append(col) -%}
+                {%- do bucket_values[bucket_num].append(col) -%}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
@@ -52,7 +53,7 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_num, values in partitions.items() -%}
+        {%- for bucket_num, values in bucket_values.items() -%}
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
                 {# Format each value based on its type #}
