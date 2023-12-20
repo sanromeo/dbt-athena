@@ -14,72 +14,72 @@
 
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
-    {%- set bucket_partitions = {} -%}
-    {%- set non_bucket_partitions = [] -%}
+    {%- set partitions = {} -%}
+    {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
+    {%- set partitions_batches = [] -%}
 
-    {# Process each row to group values by bucket number and handle non-bucketed partitions #}
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
-            {%- set bucket_match = modules.re.search('bucket\((.+),\s*(\d+)\)', partition_key) -%}
+            {%- set comp_func = '=' -%}
+            {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {# Handle bucketed partition #}
-                {%- set bucket_column = bucket_match[1] -%}
-                {%- set num_buckets = bucket_match[2] | int -%}
-                {%- set bucket_num = adapter.murmur3_hash(col, num_buckets) -%}
-                {%- if bucket_num not in bucket_partitions -%}
-                    {%- do bucket_partitions.update({bucket_num: []}) -%}
-                {%- endif -%}
-                {%- do bucket_partitions[bucket_num].append(col) -%}
+                {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
+                {%- if bucket_num not in partitions %}
+                    {%- do partitions.update({bucket_num: []}) %}
+                {%- endif %}
+                {%- do partitions[bucket_num].append(col) -%}
             {%- else -%}
-                {# Handle non-bucketed partitions #}
+                {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
-                    {%- set formatted_value = 'null' -%}
-                {%- elif column_type == 'integer' or column_type == 'long' -%}
-                    {%- set formatted_value = col | string -%}
+                    {%- set value = 'null' -%}
+                    {%- set comp_func = ' is ' -%}
+                {%- elif column_type == 'integer' or column_type is none -%}
+                    {%- set value = col | string -%}
                 {%- elif column_type == 'string' -%}
-                    {%- set formatted_value = "'" + col + "'" -%}
+                    {%- set value = "'" + col + "'" -%}
                 {%- elif column_type == 'date' -%}
-                    {%- set formatted_value = "DATE'" + col | string + "'" -%}
+                    {%- set value = "DATE'" + col | string + "'" -%}
                 {%- elif column_type == 'timestamp' -%}
-                    {%- set formatted_value = "TIMESTAMP'" + col | string + "'" -%}
+                    {%- set value = "TIMESTAMP'" + col | string + "'" -%}
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
-                {%- do single_partition.append(formatted_value) -%}
+                {%- do single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
-        {%- if single_partition|length > 0 -%}
-            {%- do non_bucket_partitions.append('(' + single_partition | join(' and ') + ')') -%}
-        {%- endif -%}
-    {%- endfor -%}
 
-    {# Create batches combining bucket values and non-bucket partitions #}
-    {%- set partitions_batches = [] -%}
-    {%- for bucket_num, values in bucket_partitions.items() -%}
-        {%- set bucket_conditions = [] -%}
-        {%- for value in values -%}
-            {# Create WHERE clause for each value in this bucket #}
-            {%- if column_type == 'string' -%}
-                {%- set formatted_value = "'" + value | string + "'" -%}
-            {%- elif column_type == 'date' -%}
-                {%- set formatted_value = "DATE'" + value | string + "'" -%}
-            {%- elif column_type == 'timestamp' -%}
-                {%- set formatted_value = "TIMESTAMP'" + value | string + "'" -%}
-            {%- else -%}
-                {%- set formatted_value = value | string -%}
-            {%- endif -%}
-            {%- set bucket_condition = bucket_column + " = " + formatted_value -%}
-            {%- set bucket_conditions = bucket_conditions + [bucket_condition] -%}
+        {%- for bucket_num, values in partitions.items() -%}
+            {%- set bucket_column = bucket_match[1] -%}
+            {%- set formatted_values = [] -%}
+            {%- for value in values -%}
+                {# Format each value based on its type #}
+                {%- if column_type == 'string' -%}
+                    {%- do formatted_values.append("'" + value | string + "'") -%}
+                {%- elif column_type == 'integer' -%}
+                    {%- do formatted_values.append(value | string) -%}
+                {%- elif column_type == 'date' -%}
+                    {%- do formatted_values.append("DATE'" + value | string + "'") -%}
+                {%- elif column_type == 'timestamp' -%}
+                    {%- do formatted_values.append("TIMESTAMP'" + value | string + "'") -%}
+                {%- else -%}
+                    {%- do formatted_values.append(value | string) -%}
+                {%- endif -%}
+            {%- endfor -%}
+            {%- do single_partition.append(bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
         {%- endfor -%}
-        {# Combine conditions for this bucket #}
-        {%- set bucket_condition = bucket_conditions | join(' or ') -%}
-        {# Add non-bucket conditions #}
-        {%- for non_bucket in non_bucket_partitions -%}
-            {%- set bucket_condition = bucket_condition + ' and ' + non_bucket -%}
-        {%- endfor -%}
-        {%- set partitions_batches = partitions_batches + [bucket_condition] -%}
+
+        {%- set single_partition_expression = single_partition | join(' and ') -%}
+        {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
+        {% if not batch_number in partitions %}
+            {% do partitions.update({batch_number: []}) %}
+        {% endif %}
+        {%- do partitions[batch_number].append('(' + single_partition_expression + ')') -%}
+        {%- if partitions[batch_number] | length == athena_partitions_limit or loop.last -%}
+            {%- do partitions_batches.append(partitions[batch_number] | join(' or ')) -%}
+        {%- endif -%}
     {%- endfor -%}
 
     {{ return(partitions_batches) }}
