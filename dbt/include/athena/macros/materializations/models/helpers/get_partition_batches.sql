@@ -27,6 +27,7 @@
             {%- if bucket_match -%}
                 {# Handle bucketed partition #}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
+                {%- set bucket_column = bucket_match[1] -%}
                 {%- if bucket_num not in partitions %}
                     {%- do partitions.update({bucket_num: []}) %}
                 {%- endif %}
@@ -52,7 +53,6 @@
         {%- endfor -%}
 
         {%- for bucket_num, values in partitions.items() -%}
-            {%- set bucket_column = bucket_match[1] -%}
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
                 {# Format each value based on its type #}
