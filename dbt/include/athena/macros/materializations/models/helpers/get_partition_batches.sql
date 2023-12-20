@@ -70,15 +70,16 @@
             {%- else -%}
                 {%- set formatted_value = value | string -%}
             {%- endif -%}
-            {%- do bucket_conditions.append(bucket_column + " = " + formatted_value) -%}
+            {%- set bucket_condition = bucket_column + " = " + formatted_value -%}
+            {%- set bucket_conditions = bucket_conditions + [bucket_condition] -%}
         {%- endfor -%}
         {# Combine conditions for this bucket #}
         {%- set bucket_condition = bucket_conditions | join(' or ') -%}
         {# Add non-bucket conditions #}
         {%- for non_bucket in non_bucket_partitions -%}
-            {%- do bucket_condition = bucket_condition + ' and ' + non_bucket -%}
+            {%- set bucket_condition = bucket_condition + ' and ' + non_bucket -%}
         {%- endfor -%}
-        {%- do partitions_batches.append(bucket_condition) -%}
+        {%- set partitions_batches = partitions_batches + [bucket_condition] -%}
     {%- endfor -%}
 
     {{ return(partitions_batches) }}
