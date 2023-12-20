@@ -1272,7 +1272,7 @@ class AthenaAdapter(SQLAdapter):
         bucket = re.search(r"bucket\((.+),", partition_key.lower())
         if hidden:
             return f"date_trunc('{hidden.group(1)}', {hidden.group(2)})"
-        if bucket:
+        elif bucket:
             return bucket.group(1)
         else:
             return partition_key.lower()

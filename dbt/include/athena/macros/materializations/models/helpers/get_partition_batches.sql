@@ -49,6 +49,7 @@
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
+                {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
                 {%- do single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
