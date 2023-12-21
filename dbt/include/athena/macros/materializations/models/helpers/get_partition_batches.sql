@@ -27,8 +27,8 @@
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {# Handle bucketed partition #}
-                {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set bucket_column = bucket_match[1] -%}
+                {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in bucket_values %}
                     {%- do bucket_values.update({bucket_num: []}) %}
                 {%- endif %}
