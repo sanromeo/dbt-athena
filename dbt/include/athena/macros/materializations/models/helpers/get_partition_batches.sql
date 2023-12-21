@@ -59,6 +59,7 @@
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
                 {# Format each value based on its type #}
+                {%- set column_type = adapter.convert_type(table, loop.index0) -%
                 {%- if column_type == 'string' -%}
                     {%- do formatted_values.append("'" + value | string + "'") -%}
                 {%- elif column_type == 'integer' -%}
@@ -68,7 +69,7 @@
                 {%- elif column_type == 'timestamp' -%}
                     {%- do formatted_values.append("TIMESTAMP'" + value | string + "'") -%}
                 {%- else -%}
-                    {%- do formatted_values.append(value | string) -%}
+                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
             {%- endfor -%}
             {%- do single_partition.append(ns.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
