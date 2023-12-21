@@ -22,9 +22,10 @@
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
+            {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
+            {%- set bucket_column = bucket_match[1] if bucket_match else None -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
-            {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {# Handle bucketed partition #}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
