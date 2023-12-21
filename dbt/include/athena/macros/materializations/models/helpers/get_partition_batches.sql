@@ -70,10 +70,7 @@
                     {%- do formatted_values.append(value | string) -%}
                 {%- endif -%}
             {%- endfor -%}
-            {%- set bucket_column = bucket_match[1] if bucket_match else None -%}
-            {%- if bucket_column -%}
-                {%- do single_partition.append(bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
-            {%- endif -%}
+            {%- do single_partition.append(bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = single_partition | join(' and ') -%}
