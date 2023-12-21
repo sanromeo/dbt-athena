@@ -1,4 +1,5 @@
 {% macro get_partition_batches(sql, as_subquery=True) -%}
+    {%- set ns = namespace(bucket_column=None) -%}
     {%- set partitioned_by = config.get('partitioned_by') -%}
     {%- set athena_partitions_limit = config.get('partitions_limit', 100) | int -%}
     {%- set partitioned_keys = adapter.format_partition_keys(partitioned_by) -%}
@@ -27,7 +28,7 @@
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {# Handle bucketed partition #}
-                {%- set bucket_column = bucket_match[1] -%}
+                {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in bucket_values %}
                     {%- do bucket_values.update({bucket_num: []}) %}
@@ -70,7 +71,7 @@
                     {%- do formatted_values.append(value | string) -%}
                 {%- endif -%}
             {%- endfor -%}
-            {%- do single_partition.append(bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
+            {%- do single_partition.append(ns.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = single_partition | join(' and ') -%}
