@@ -1,5 +1,6 @@
 {% macro get_partition_batches(sql, as_subquery=True) -%}
     {%- set ns = namespace(bucket_column=None) -%}
+    {%- set ns_bucket = namespace(bucket_column_type=None) -%}
     {%- set partitioned_by = config.get('partitioned_by') -%}
     {%- set athena_partitions_limit = config.get('partitions_limit', 100) | int -%}
     {%- set partitioned_keys = adapter.format_partition_keys(partitioned_by) -%}
@@ -58,18 +59,27 @@
         {%- for bucket_num, values in bucket_values.items() -%}
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
-                {# Determine the type of the bucket_column and format accordingly #}
-                {%- set column_type = adapter.convert_type(table, loop.index0) -%}
-                {%- if column_type == 'string' -%}
+                {# Find the data type of the bucket_column #}
+                {%- if ns_bucket.bucket_column_type is none -%}
+                    {%- for col_name in table.columns -%}
+                        {%- if ns.bucket_column == col_name.name -%}
+                            {%- set ns_bucket.bucket_column_type = adapter.convert_type(table, loop.index0) -%}
+                            {%- break -%}
+                        {%- endif -%}
+                    {%- endfor -%}
+                {%- endif -%}
+
+                {# Format each value based on its type #}
+                {%- if ns_bucket.bucket_column_type == 'string' -%}
                     {%- do formatted_values.append("'" + value | string + "'") -%}
-                {%- elif column_type == 'integer' -%}
+                {%- elif ns_bucket.bucket_column_type == 'integer' -%}
                     {%- do formatted_values.append(value | string) -%}
-                {%- elif column_type == 'date' -%}
+                {%- elif ns_bucket.bucket_column_type == 'date' -%}
                     {%- do formatted_values.append("DATE'" + value | string + "'") -%}
-                {%- elif column_type == 'timestamp' -%}
+                {%- elif ns_bucket.bucket_column_type == 'timestamp' -%}
                     {%- do formatted_values.append("TIMESTAMP'" + value | string + "'") -%}
                 {%- else -%}
-                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
+                    {%- do exceptions.raise_compiler_error('Unsupported column type for bucketing: ' + ns_bucket.bucket_column_type) -%}
                 {%- endif -%}
             {%- endfor -%}
             {%- do single_partition.append(ns.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
