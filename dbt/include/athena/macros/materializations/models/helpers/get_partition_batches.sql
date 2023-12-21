@@ -15,12 +15,12 @@
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
     {%- set partitions = {} -%}
-    {%- set bucket_values = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
+        {%- set bucket_values = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
@@ -49,8 +49,8 @@
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
-                {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do single_partition.append(partition_key_formatted + comp_func + value) -%}
+                {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
+                {%- do single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
