@@ -58,19 +58,18 @@
         {%- for bucket_num, values in bucket_values.items() -%}
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
-                {# Format each value based on its type #}
-                {%- set bucket_col_index = partitioned_by.index(ns.bucket_column) -%}
-                {%- set bucket_col_type = adapter.convert_type(table, bucket_col_index) -%}
-                {%- if bucket_col_type == 'string' -%}
+                {# Determine the type of the bucket_column and format accordingly #}
+                {%- set column_type = adapter.convert_type(table, loop.index0) -%}
+                {%- if column_type == 'string' -%}
                     {%- do formatted_values.append("'" + value | string + "'") -%}
-                {%- elif bucket_col_type == 'integer' -%}
+                {%- elif column_type == 'integer' -%}
                     {%- do formatted_values.append(value | string) -%}
-                {%- elif bucket_col_type == 'date' -%}
+                {%- elif column_type == 'date' -%}
                     {%- do formatted_values.append("DATE'" + value | string + "'") -%}
-                {%- elif bucket_col_type == 'timestamp' -%}
+                {%- elif column_type == 'timestamp' -%}
                     {%- do formatted_values.append("TIMESTAMP'" + value | string + "'") -%}
                 {%- else -%}
-                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + bucket_col_type) -%}
+                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
             {%- endfor -%}
             {%- do single_partition.append(ns.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
