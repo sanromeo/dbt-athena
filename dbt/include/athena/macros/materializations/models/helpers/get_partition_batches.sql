@@ -59,7 +59,7 @@
             {%- set formatted_values = [] -%}
             {%- for value in values -%}
                 {# Format each value based on its type #}
-                {%- set column_type = adapter.convert_type(table, loop.index0) -%
+                {%- set column_type = adapter.convert_type(table, loop.index0) -%}
                 {%- if column_type == 'string' -%}
                     {%- do formatted_values.append("'" + value | string + "'") -%}
                 {%- elif column_type == 'integer' -%}
