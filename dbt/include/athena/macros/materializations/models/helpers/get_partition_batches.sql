@@ -1,5 +1,4 @@
 {% macro get_partition_batches(sql, as_subquery=True) -%}
-    {%- set ns = namespace(bucket_column=None) -%}
     {%- set partitioned_by = config.get('partitioned_by') -%}
     {%- set athena_partitions_limit = config.get('partitions_limit', 100) | int -%}
     {%- set partitioned_keys = adapter.format_partition_keys(partitioned_by) -%}
@@ -18,10 +17,10 @@
     {%- set partitions = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
+    {%- set ns = namespace(bucket_values={}, bucket_column=None, single_partition=[]) -%}
 
     {%- for row in rows -%}
-        {%- set single_partition = [] -%}
-        {%- set bucket_values = {} -%}
+        {%- set ns.single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
@@ -30,13 +29,22 @@
                 {# Handle bucketed partition #}
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
-                {%- if bucket_num not in bucket_values %}
-                    {%- do bucket_values.update({bucket_num: {'values': [], 'type': None}}) %}
+                {%- if bucket_num not in ns.bucket_values %}
+                    {%- do ns.bucket_values.update({bucket_num: []}) %}
                 {%- endif %}
-                {%- set bucket_column_type = adapter.convert_type(table, loop.index0) -%}
-                {%- do bucket_values[bucket_num]['values'].append(col) -%}
-                {%- do bucket_values[bucket_num].update({'type': bucket_column_type}) -%}
-                {% do log('Adding value ' ~ col ~ ' to bucket ' ~ bucket_num) %}
+                {# Format value based on column type #}
+                {%- if column_type == 'string' -%}
+                    {%- set formatted_value = "'" + col | string + "'" -%}
+                {%- elif column_type == 'integer' -%}
+                    {%- set formatted_value = col | string -%}
+                {%- elif column_type == 'date' -%}
+                    {%- set formatted_value = "DATE'" + col | string + "'" -%}
+                {%- elif column_type == 'timestamp' -%}
+                    {%- set formatted_value = "TIMESTAMP'" + col | string + "'" -%}
+                {%- else -%}
+                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
+                {%- endif -%}
+                {%- do ns.bucket_values[bucket_num].append(formatted_value) -%}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
@@ -54,30 +62,15 @@
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
                 {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do single_partition.append(partition_key + comp_func + value) -%}
+                {%- do ns.single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_num, bucket_data in bucket_values.items() -%}
-            {%- set formatted_values = [] -%}
-            {%- for value in bucket_data['values'] -%}
-                {# Format each value based on its type #}
-                {%- if bucket_data['type'] == 'string' -%}
-                    {%- do formatted_values.append("'" + value | string + "'") -%}
-                {%- elif bucket_data['type'] == 'integer' -%}
-                    {%- do formatted_values.append(value | string) -%}
-                {%- elif bucket_data['type'] == 'date' -%}
-                    {%- do formatted_values.append("DATE'" + value | string + "'") -%}
-                {%- elif bucket_data['type'] == 'timestamp' -%}
-                    {%- do formatted_values.append("TIMESTAMP'" + value | string + "'") -%}
-                {%- else -%}
-                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + bucket_data['type']) -%}
-                {%- endif -%}
-            {%- endfor -%}
-            {%- do single_partition.append(ns.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
+        {%- for bucket_num, values in ns.bucket_values.items() -%}
+            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | join(", ") + ")") -%}
         {%- endfor -%}
 
-        {%- set single_partition_expression = single_partition | join(' and ') -%}
+        {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
         {% if not batch_number in partitions %}
             {% do partitions.update({batch_number: []}) %}
