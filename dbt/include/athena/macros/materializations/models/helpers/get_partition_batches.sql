@@ -29,7 +29,7 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
-                    {%- set ns.bucket_values[bucket_num] = [] -%}
+                    {% do ns.bucket_values.update({bucket_num: []}) %}
                 {%- endif %}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- if formatted_value not in ns.bucket_values[bucket_num] -%}
