@@ -17,15 +17,16 @@
     {%- set partitions = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set ns = namespace(bucket_map={}, single_partition=[]) -%}
+    {%- set ns = namespace(bucket_map={}, single_partition=[], bucket_column=None) -%}
 
     {%- for row in rows -%}
         {%- set ns.single_partition = [] -%}
+        {%- set ns.bucket_map = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
-                {%- set bucket_column = bucket_match[1] -%}
+                {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
                 {% do ns.bucket_map.setdefault(bucket_num, []).append(formatted_value) %}
@@ -38,7 +39,7 @@
 
         {%- for bucket_num, values in ns.bucket_map.items() -%}
             {%- set unique_values = values | unique -%}  {# Ensure values are unique #}
-            {%- do ns.single_partition.append(bucket_column + " IN (" + unique_values | join(", ") + ")") -%}
+            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + unique_values | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
