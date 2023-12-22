@@ -30,7 +30,7 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
-                    {%- do ns.bucket_values.update({bucket_num: []}) %}
+                    {%- do ns.bucket_values.update({bucket_num: set()}) %}
                 {%- endif %}
                 {# Format value based on column type #}
                 {%- if column_type == 'string' -%}
@@ -44,7 +44,7 @@
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
-                {%- do ns.bucket_values[bucket_num].append(formatted_value) -%}
+                {%- do ns.bucket_values[bucket_num].add(formatted_value) -%}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
@@ -67,7 +67,7 @@
         {%- endfor -%}
 
         {%- for bucket_num, values in ns.bucket_values.items() -%}
-            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | join(", ") + ")") -%}
+            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | list | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
