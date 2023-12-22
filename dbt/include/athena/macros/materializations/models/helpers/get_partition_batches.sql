@@ -14,7 +14,7 @@
 
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
-    {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
+    {%- set partitions = {} -%}
     {%- set partitions_batches = [] -%}
     {%- set ns = namespace(bucket_map={}, single_partition=[], bucket_column=None) -%}
 
@@ -28,8 +28,8 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {# Aggregate values by bucket number #}
                 {% do ns.bucket_map.setdefault(bucket_num, []).append(formatted_value) %}
+                {% do log('Bucket ' ~ bucket_num ~ ': Adding value ' ~ formatted_value) %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
@@ -37,21 +37,24 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {# Grouping values by bucket number #}
+        {# Combine partition conditions and bucket conditions #}
         {%- for bucket_num, values in ns.bucket_map.items() -%}
             {%- set unique_values = values | unique -%}
             {%- do ns.single_partition.append(ns.bucket_column + " IN (" + unique_values | join(", ") + ")") -%}
+            {% do log('Bucket ' ~ bucket_num ~ ' IN clause: ' ~ ns.bucket_column + " IN (" + unique_values | join(", ") + ")") %}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
-        {%- if single_partition_expression -%}
-            {%- do partitions_batches.append('(' + single_partition_expression + ')') -%}
-        {%- endif -%}
+        {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
+        {% if not batch_number in partitions %}
+            {% do partitions.update({batch_number: []}) %}
+        {% endif %}
+        {%- do partitions[batch_number].append('(' + single_partition_expression + ')') -%}
+        {% do log('Batch ' ~ batch_number ~ ': ' ~ single_partition_expression) %}
     {%- endfor -%}
 
-    {%- if partitions_batches -%}
-        {{ return(partitions_batches) }}
-    {%- else -%}
-        {{ return([]) }}
-    {%- endif -%}
+    {# Log final batches #}
+    {% do log('Final Partitions Batches: ' ~ partitions_batches) %}
+
+    {{ return(partitions_batches) }}
 {%- endmacro %}
