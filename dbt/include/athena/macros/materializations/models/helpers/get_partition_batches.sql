@@ -21,30 +21,28 @@
 
     {%- for row in rows -%}
         {%- set ns.single_partition = [] -%}
+        {%- set ns.bucket_values = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
-                {# Handle bucketed partition #}
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
                     {%- do ns.bucket_values.update({bucket_num: set()}) %}
                 {%- endif %}
-                {# Format value based on column type #}
                 {%- if column_type == 'string' -%}
-                    {%- set formatted_value = "'" + col | string + "'" -%}
+                    {%- do ns.bucket_values[bucket_num].add("'" + col | string + "'") -%}
                 {%- elif column_type == 'integer' -%}
-                    {%- set formatted_value = col | string -%}
+                    {%- do ns.bucket_values[bucket_num].add(col | string) -%}
                 {%- elif column_type == 'date' -%}
-                    {%- set formatted_value = "DATE'" + col | string + "'" -%}
+                    {%- do ns.bucket_values[bucket_num].add("DATE'" + col | string + "'") -%}
                 {%- elif column_type == 'timestamp' -%}
-                    {%- set formatted_value = "TIMESTAMP'" + col | string + "'" -%}
+                    {%- do ns.bucket_values[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
-                {%- do ns.bucket_values[bucket_num].add(formatted_value) -%}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
