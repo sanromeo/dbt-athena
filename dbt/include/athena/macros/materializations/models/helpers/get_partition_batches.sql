@@ -17,22 +17,18 @@
     {%- set partitions = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set ns = namespace(bucket_values={}, single_partition=[]) -%}
+    {%- set ns = namespace(bucket_map={}, single_partition=[]) -%}
 
     {%- for row in rows -%}
         {%- set ns.single_partition = [] -%}
-        {%- set ns.bucket_values = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
-                {%- set ns.bucket_column = bucket_match[1] -%}
+                {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
-                {% do ns.bucket_values.update({bucket_num: ns.bucket_values.get(bucket_num, [])}) %}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {% if formatted_value not in ns.bucket_values[bucket_num] %}
-                    {% do ns.bucket_values[bucket_num].append(formatted_value) %}
-                {% endif %}
+                {% do ns.bucket_map.setdefault(bucket_num, []).append(formatted_value) %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
@@ -40,8 +36,9 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_num, values in ns.bucket_values.items() -%}
-            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | join(", ") + ")") -%}
+        {%- for bucket_num, values in ns.bucket_map.items() -%}
+            {%- set unique_values = values | unique -%}  {# Ensure values are unique #}
+            {%- do ns.single_partition.append(bucket_column + " IN (" + unique_values | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
@@ -56,5 +53,4 @@
     {%- endfor -%}
 
     {{ return(partitions_batches) }}
-
 {%- endmacro %}
