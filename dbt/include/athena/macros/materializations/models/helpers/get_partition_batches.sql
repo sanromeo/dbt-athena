@@ -21,7 +21,6 @@
 
     {%- for row in rows -%}
         {%- set ns.single_partition = [] -%}
-        {%- set ns.bucket_values = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
@@ -30,16 +29,26 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
-                    {%- set ns.bucket_values[bucket_num] = set() %}
+                    {%- set temp = ns.bucket_values -%}
+                    {%- set temp[bucket_num] = set() -%}
+                    {%- set ns.bucket_values = temp -%}
                 {%- endif %}
                 {%- if column_type == 'string' -%}
-                    {%- set _ = ns.bucket_values[bucket_num].add("'" + col | string + "'") -%}
+                    {%- set temp = ns.bucket_values -%}
+                    {%- do temp[bucket_num].add("'" + col | string + "'") -%}
+                    {%- set ns.bucket_values = temp -%}
                 {%- elif column_type == 'integer' -%}
-                    {%- set _ = ns.bucket_values[bucket_num].add(col | string) -%}
+                    {%- set temp = ns.bucket_values -%}
+                    {%- do temp[bucket_num].add(col | string) -%}
+                    {%- set ns.bucket_values = temp -%}
                 {%- elif column_type == 'date' -%}
-                    {%- set _ = ns.bucket_values[bucket_num].add("DATE'" + col | string + "'") -%}
+                    {%- set temp = ns.bucket_values -%}
+                    {%- do temp[bucket_num].add("DATE'" + col | string + "'") -%}
+                    {%- set ns.bucket_values = temp -%}
                 {%- elif column_type == 'timestamp' -%}
-                    {%- set _ = ns.bucket_values[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
+                    {%- set temp = ns.bucket_values -%}
+                    {%- do temp[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
+                    {%- set ns.bucket_values = temp -%}
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
