@@ -28,13 +28,11 @@
             {%- if bucket_match -%}
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
-                {%- if bucket_num not in ns.bucket_values -%}
-                    {%- set ns.bucket_values[bucket_num] = [] -%}
-                {%- endif %}
+                {% do ns.bucket_values.update({bucket_num: ns.bucket_values.get(bucket_num, [])}) %}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {%- if formatted_value not in ns.bucket_values[bucket_num] -%}
-                    {%- do ns.bucket_values[bucket_num].append(formatted_value) -%}
-                {%- endif -%}
+                {% if formatted_value not in ns.bucket_values[bucket_num] %}
+                    {% do ns.bucket_values[bucket_num].append(formatted_value) %}
+                {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
