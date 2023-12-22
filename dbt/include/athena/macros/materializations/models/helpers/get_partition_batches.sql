@@ -17,10 +17,10 @@
     {%- set partitions = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set ns = namespace(partition_conditions={}) -%}
 
     {%- for row in rows -%}
-        {%- set partition_condition = [] -%}
+        {%- set single_partition = [] -%}
+        {%- set bucket_values = {} -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set comp_func = '=' -%}
@@ -28,25 +28,25 @@
             {%- if bucket_match -%}
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
+                {%- if bucket_num not in bucket_values -%}
+                    {%- set bucket_values = bucket_values.update({bucket_num: []}) -%}
+                {%- endif %}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {%- set bucket_key = bucket_column + '_' + bucket_num|string -%}
-                {%- if bucket_key not in ns.partition_conditions %}
-                    {% do ns.partition_conditions.update({bucket_key: [formatted_value]}) %}
-                {%- elif formatted_value not in ns.partition_conditions[bucket_key] -%}
-                    {%- do ns.partition_conditions[bucket_key].append(formatted_value) -%}
+                {%- if formatted_value not in bucket_values[bucket_num] -%}
+                    {%- do bucket_values[bucket_num].append(formatted_value) -%}
                 {%- endif -%}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
-                {%- set partition_key_formatted = adapter.format_one_partition_key(partition_key) -%}
-                {%- do partition_condition.append(partition_key_formatted + comp_func + value) -%}
+                {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
+                {%- do single_partition.append(partition_key_formatted + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_key, values in ns.partition_conditions.items() -%}
-            {%- do partition_condition.append(bucket_key.split('_')[0] + " IN (" + values | join(", ") + ")") -%}
+        {%- for bucket_num, values in bucket_values.items() -%}
+            {%- do single_partition.append(bucket_column + " IN (" + values | join(", ") + ")") -%}
         {%- endfor -%}
 
-        {%- set single_partition_expression = partition_condition | join(' and ') -%}
+        {%- set single_partition_expression = single_partition | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
         {% if not batch_number in partitions %}
             {% do partitions.update({batch_number: []}) %}
