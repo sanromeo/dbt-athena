@@ -37,6 +37,7 @@
                 {%- set bucket_column_type = adapter.convert_type(table, loop.index0) -%}
                 {%- do bucket_values[bucket_num]['values'].append(col) -%}
                 {%- do bucket_values[bucket_num].update({'type': bucket_column_type}) -%}
+                {% do log('Adding value ' ~ col ~ ' to bucket ' ~ bucket_num) %}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
                 {%- if col is none -%}
@@ -74,6 +75,7 @@
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + bucket_info['type']) -%}
                 {%- endif -%}
             {%- endfor -%}
+            {% do log('Bucket ' ~ bucket_num ~ ' values: ' ~ formatted_values) %}
             {%- do ns_sp.single_partition.append(ns_bc.bucket_column + " IN (" + formatted_values | join(", ") + ")") -%}
         {%- endfor -%}
 
