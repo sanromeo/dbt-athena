@@ -30,16 +30,16 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
-                    {%- do ns.bucket_values.update({bucket_num: set()}) %}
+                    {%- set ns.bucket_values[bucket_num] = set() %}
                 {%- endif %}
                 {%- if column_type == 'string' -%}
-                    {%- do ns.bucket_values[bucket_num].add("'" + col | string + "'") -%}
+                    {%- set _ = ns.bucket_values[bucket_num].add("'" + col | string + "'") -%}
                 {%- elif column_type == 'integer' -%}
-                    {%- do ns.bucket_values[bucket_num].add(col | string) -%}
+                    {%- set _ = ns.bucket_values[bucket_num].add(col | string) -%}
                 {%- elif column_type == 'date' -%}
-                    {%- do ns.bucket_values[bucket_num].add("DATE'" + col | string + "'") -%}
+                    {%- set _ = ns.bucket_values[bucket_num].add("DATE'" + col | string + "'") -%}
                 {%- elif column_type == 'timestamp' -%}
-                    {%- do ns.bucket_values[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
+                    {%- set _ = ns.bucket_values[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
@@ -59,13 +59,12 @@
                 {%- else -%}
                     {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
                 {%- endif -%}
-                {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do ns.single_partition.append(partition_key + comp_func + value) -%}
+                {%- set _ = ns.single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
         {%- for bucket_num, values in ns.bucket_values.items() -%}
-            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | list | join(", ") + ")") -%}
+            {%- set _ = ns.single_partition.append(ns.bucket_column + " IN (" + values | list | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
