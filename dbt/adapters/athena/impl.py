@@ -1311,3 +1311,22 @@ class AthenaAdapter(SQLAdapter):
             raise TypeError(f"Need to add support data type for hashing: {type(value)}")
 
         return (hash_value & self.INTEGER_MAX_VALUE_SIGNED_32_BIT) % num_buckets
+
+    @available
+    def format_value_for_partition(self, value: str, column_type: str) -> str:
+        """Formats a value based on its column type for inclusion in a SQL query."""
+        if value is None:
+            return "null"
+        elif column_type == "integer":
+            return str(value)
+        elif column_type == "string":
+            # Properly escape single quotes in the string value
+            escaped_value = str(value).replace("'", "''")
+            return f"'{escaped_value}'"
+        elif column_type == "date":
+            return f"DATE'{value}'"
+        elif column_type == "timestamp":
+            return f"TIMESTAMP'{value}'"
+        else:
+            # Raise an error for unsupported column types
+            raise ValueError(f"Unsupported column type: {column_type}")

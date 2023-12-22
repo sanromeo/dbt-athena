@@ -29,51 +29,22 @@
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- if bucket_num not in ns.bucket_values %}
-                    {%- set temp = ns.bucket_values -%}
-                    {%- set temp[bucket_num] = set() -%}
-                    {%- set ns.bucket_values = temp -%}
+                    {%- set ns.bucket_values[bucket_num] = [] -%}
                 {%- endif %}
-                {%- if column_type == 'string' -%}
-                    {%- set temp = ns.bucket_values -%}
-                    {%- do temp[bucket_num].add("'" + col | string + "'") -%}
-                    {%- set ns.bucket_values = temp -%}
-                {%- elif column_type == 'integer' -%}
-                    {%- set temp = ns.bucket_values -%}
-                    {%- do temp[bucket_num].add(col | string) -%}
-                    {%- set ns.bucket_values = temp -%}
-                {%- elif column_type == 'date' -%}
-                    {%- set temp = ns.bucket_values -%}
-                    {%- do temp[bucket_num].add("DATE'" + col | string + "'") -%}
-                    {%- set ns.bucket_values = temp -%}
-                {%- elif column_type == 'timestamp' -%}
-                    {%- set temp = ns.bucket_values -%}
-                    {%- do temp[bucket_num].add("TIMESTAMP'" + col | string + "'") -%}
-                    {%- set ns.bucket_values = temp -%}
-                {%- else -%}
-                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
+                {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
+                {%- if formatted_value not in ns.bucket_values[bucket_num] -%}
+                    {%- do ns.bucket_values[bucket_num].append(formatted_value) -%}
                 {%- endif -%}
             {%- else -%}
                 {# Existing logic for non-bucketed columns #}
-                {%- if col is none -%}
-                    {%- set value = 'null' -%}
-                    {%- set comp_func = ' is ' -%}
-                {%- elif column_type == 'integer' or column_type is none -%}
-                    {%- set value = col | string -%}
-                {%- elif column_type == 'string' -%}
-                    {%- set value = "'" + col + "'" -%}
-                {%- elif column_type == 'date' -%}
-                    {%- set value = "DATE'" + col | string + "'" -%}
-                {%- elif column_type == 'timestamp' -%}
-                    {%- set value = "TIMESTAMP'" + col | string + "'" -%}
-                {%- else -%}
-                    {%- do exceptions.raise_compiler_error('Need to add support for column type ' + column_type) -%}
-                {%- endif -%}
-                {%- set _ = ns.single_partition.append(partition_key + comp_func + value) -%}
+                {%- set value = adapter.format_value_for_partition(col, column_type) -%}
+                {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
+                {%- do ns.single_partition.append(partition_key + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
         {%- for bucket_num, values in ns.bucket_values.items() -%}
-            {%- set _ = ns.single_partition.append(ns.bucket_column + " IN (" + values | list | join(", ") + ")") -%}
+            {%- do ns.single_partition.append(ns.bucket_column + " IN (" + values | join(", ") + ")") -%}
         {%- endfor -%}
 
         {%- set single_partition_expression = ns.single_partition | join(' and ') -%}
