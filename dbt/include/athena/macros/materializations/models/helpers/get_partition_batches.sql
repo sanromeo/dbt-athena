@@ -16,12 +16,10 @@
     {%- set rows = table.rows -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set bucket_values_map = {} -%}  {# Map to store values for each bucket number #}
+    {%- set bucket_map = {} -%}  {# Map to store bucket columns and their values #}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
-        {%- set current_buckets = {} -%}  {# Current row`s bucket values #}
-
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
@@ -29,37 +27,25 @@
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {# Accumulate unique values for each bucket number #}
-                {% if bucket_num not in current_buckets %}
-                    {% do current_buckets.update({bucket_num: [formatted_value]}) %}
-                {% elif formatted_value not in current_buckets[bucket_num] %}
-                    {% do current_buckets[bucket_num].append(formatted_value) %}
+
+                {# Update bucket_map with values and their corresponding column #}
+                {% if bucket_num not in bucket_map %}
+                    {% do bucket_map.update({bucket_num: {'column': bucket_column, 'values': [formatted_value]}}) %}
+                {% elif formatted_value not in bucket_map[bucket_num]['values'] %}
+                    {% do bucket_map[bucket_num]['values'].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
-                {# Handle non-bucketed columns #}
+                {# Non-bucketed columns #}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partition_key) -%}
                 {%- do single_partition.append(partition_key_formatted + " = " + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
-        {# Process current row's bucket values and add to bucket_values_map #}
-        {%- for bucket_num, values in current_buckets.items() -%}
-            {% if bucket_num not in bucket_values_map %}
-                {% do bucket_values_map.update({bucket_num: values}) %}
-            {% else %}
-                {# Add only unique values #}
-                {% for value in values %}
-                    {% if value not in bucket_values_map[bucket_num] %}
-                        {% do bucket_values_map[bucket_num].append(value) %}
-                    {% endif %}
-                {% endfor %}
-            {% endif %}
-        {%- endfor -%}
-
-        {# Add bucket conditions to the single_partition list #}
-        {%- for bucket_num, values in bucket_values_map.items() -%}
-            {%- set unique_values = values | join(", ") -%}
+        {# Create IN clauses using bucket_map #}
+        {%- for bucket_info in bucket_map.values() -%}
+            {%- set bucket_column = bucket_info['column'] %}
+            {%- set unique_values = bucket_info['values'] | unique | join(", ") -%}
             {%- do single_partition.append(bucket_column + " IN (" + unique_values + ")") -%}
         {%- endfor -%}
 
