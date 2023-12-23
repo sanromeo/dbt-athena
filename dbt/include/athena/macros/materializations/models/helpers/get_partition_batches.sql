@@ -30,8 +30,12 @@
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {# Grouping bucket values by bucket number for the current row #}
-                {% do current_buckets.setdefault(bucket_num, []).append(formatted_value) %}
+                {# Update bucket_map with bucket column and value #}
+                {% if bucket_num not in bucket_map %}
+                    {% do bucket_map.update({bucket_num: (bucket_column, [formatted_value])}) %}
+                {% else %}
+                    {% do bucket_map[bucket_num][1].append(formatted_value) %}
+                {% endif %}
             {%- else -%}
                 {# Handling non-bucketed columns #}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
@@ -40,19 +44,10 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {# Combine current row`s bucket values into bucket_map #}
-        {%- for bucket_num, values in current_buckets.items() -%}
-            {%- if bucket_num not in bucket_map -%}
-                {% do bucket_map.update({bucket_num: (bucket_column, set(values))}) %}
-            {%- else -%}
-                {% do bucket_map[bucket_num][1].update(values) %}
-            {%- endif -%}
-        {%- endfor -%}
-
-        {# Add bucket conditions to single_partition for the current row #}
+        {# Process bucket values and add to single_partition for the current row #}
         {%- for bucket_num, bucket_info in bucket_map.items() -%}
-            {%- set bucket_column, values_set = bucket_info %}
-            {%- set unique_values = values_set | list | map('string') | join(", ") -%}
+            {%- set bucket_column, values = bucket_info %}
+            {%- set unique_values = values | unique | join(", ") -%}
             {%- do single_partition.append(bucket_column + " IN (" + unique_values + ")") -%}
         {%- endfor -%}
 
