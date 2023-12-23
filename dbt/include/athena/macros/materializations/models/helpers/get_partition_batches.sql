@@ -17,7 +17,7 @@
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions = {} -%}
     {%- set partitions_batches = [] -%}
-    {%- set bucket_values = {} -%}
+    {%- set bucket_map = {} -%}  {# Dictionary to store bucket values grouped by bucket number #}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
@@ -28,24 +28,24 @@
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {# Update bucket values #}
-                {% if bucket_num not in bucket_values %}
-                    {% do bucket_values.update({bucket_num: [formatted_value]}) %}
+                {# Grouping bucket values by bucket number #}
+                {% if bucket_num not in bucket_map %}
+                    {% do bucket_map.update({bucket_num: [formatted_value]}) %}
                 {% else %}
-                    {% do bucket_values[bucket_num].append(formatted_value) %}
+                    {% do bucket_map[bucket_num].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
-                {# Handle non-bucketed columns #}
+                {# Handling non-bucketed columns #}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
                 {%- do single_partition.append(partition_key + " = " + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
-        {# Process bucket values and add to single_partition #}
-        {%- for bucket_num, values in bucket_values.items() -%}
+        {# Add bucket conditions to the single_partition list #}
+        {%- for bucket_num, values in bucket_map.items() -%}
             {%- set unique_values = values | unique | join(", ") -%}
-            {%- set _ = single_partition.append(bucket_column + " IN (" + unique_values + ")") -%}
+            {%- do single_partition.append("bucket_column IN (" + unique_values + ")") -%}
         {%- endfor -%}
 
         {# Combine all conditions for the current partition #}
