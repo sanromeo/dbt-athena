@@ -28,11 +28,11 @@
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {# Grouping bucket values by bucket number #}
+                {# Update bucket map with bucket column and value #}
                 {% if bucket_num not in bucket_map %}
-                    {% do bucket_map.update({bucket_num: [formatted_value]}) %}
+                    {% do bucket_map.update({bucket_num: (bucket_column, [formatted_value])}) %}
                 {% else %}
-                    {% do bucket_map[bucket_num].append(formatted_value) %}
+                    {% do bucket_map[bucket_num][1].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
                 {# Handling non-bucketed columns #}
@@ -42,10 +42,11 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {# Add bucket conditions to the single_partition list #}
-        {%- for bucket_num, values in bucket_map.items() -%}
+        {# Process bucket values and add to single_partition #}
+        {%- for bucket_num, bucket_info in bucket_map.items() -%}
+            {%- set bucket_column, values = bucket_info %}
             {%- set unique_values = values | unique | join(", ") -%}
-            {%- do single_partition.append("bucket_column IN (" + unique_values + ")") -%}
+            {%- do single_partition.append(bucket_column + " IN (" + unique_values + ")") -%}
         {%- endfor -%}
 
         {# Combine all conditions for the current partition #}
