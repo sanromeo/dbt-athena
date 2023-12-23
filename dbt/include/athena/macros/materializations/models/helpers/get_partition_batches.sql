@@ -16,10 +16,11 @@
     {%- set rows = table.rows -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set bucket_map = {} -%}  {# Map to store bucket columns and their values #}
+    {%- set bucket_map = {} -%}  {# Map for each bucket number with its column and values #}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
+
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
@@ -28,7 +29,7 @@
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
 
-                {# Update bucket_map with values and their corresponding column #}
+                {# Manage bucket values and column mapping #}
                 {% if bucket_num not in bucket_map %}
                     {% do bucket_map.update({bucket_num: {'column': bucket_column, 'values': [formatted_value]}}) %}
                 {% elif formatted_value not in bucket_map[bucket_num]['values'] %}
@@ -42,7 +43,7 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {# Create IN clauses using bucket_map #}
+        {# Create IN clauses for each bucket #}
         {%- for bucket_info in bucket_map.values() -%}
             {%- set bucket_column = bucket_info['column'] %}
             {%- set unique_values = bucket_info['values'] | unique | join(", ") -%}
@@ -53,7 +54,7 @@
         {%- set single_partition_expression = single_partition | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
         {% if batch_number not in partitions_batches %}
-            {% do partitions_batches.update({batch_number: []}) %}
+            {% do partitions_batches.append([]) %}
         {% endif %}
         {% do partitions_batches[batch_number].append('(' + single_partition_expression + ')') %}
         {%- if partitions_batches[batch_number] | length == athena_partitions_limit or loop.last -%}
