@@ -17,23 +17,23 @@
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions = {} -%}
     {%- set partitions_batches = [] -%}
-    {%- set bucket_column = None -%}
+    {%- set ns = namespace(bucket_column=None, bucket_values_map={}) -%}
 
     {%- for row in rows -%}
         {%- set partition_conditions = [] -%}
-        {%- set bucket_values_map = {} -%}
+        {%- set ns.bucket_values_map = {} -%}
 
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- if 'bucket(' in partition_key -%}
                 {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
-                {%- set bucket_column = bucket_match[1] -%}
+                {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {% if bucket_num not in bucket_values_map %}
-                    {% do bucket_values_map.update({bucket_num: [formatted_value]}) %}
-                {% elif formatted_value not in bucket_values_map[bucket_num] %}
-                    {% do bucket_values_map[bucket_num].append(formatted_value) %}
+                {% if bucket_num not in ns.bucket_values_map %}
+                    {% do ns.bucket_values_map.update({bucket_num: [formatted_value]}) %}
+                {% elif formatted_value not in ns.bucket_values_map[bucket_num] %}
+                    {% do ns.bucket_values_map[bucket_num].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
@@ -42,9 +42,9 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- if bucket_column -%}
-            {%- for bucket_num, values in bucket_values_map.items() -%}
-                {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
+        {%- if ns.bucket_column -%}
+            {%- for bucket_num, values in ns.bucket_values_map.items() -%}
+                {%- set bucket_condition = ns.bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
                 {%- do partition_conditions.append(bucket_condition) -%}
             {%- endfor -%}
         {%- endif -%}
