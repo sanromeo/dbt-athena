@@ -14,60 +14,49 @@
 
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
-    {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
-    {%- set unique_partition_expressions = [] -%}
-    {%- set bucket_counts = {} -%}
-    {%- set combined_conditions = [] -%}
+    {%- set ns = namespace(partitions = [], bucket_conditions = {}, bucket_numbers = [], bucket_column = "") -%}
 
     {%- for row in rows -%}
-        {%- set partition_conditions = [] -%}
-        {%- set bucket_conditions = {} -%}
-
+        {%- set single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
-
             {%- if bucket_match -%}
-                {%- set bucket_column = bucket_match[1] -%}
+                {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-
-                {# Update the bucket_conditions dictionary #}
-                {% if bucket_num not in bucket_conditions %}
-                    {% do bucket_conditions.update({bucket_num: [formatted_value]}) %}
-                {% else %}
-                    {% do bucket_conditions[bucket_num].append(formatted_value) %}
-                {% endif %}
+                {%- if bucket_num not in ns.bucket_numbers %}
+                    {%- do ns.bucket_numbers.append(bucket_num) %}
+                    {%- set ns.bucket_conditions[bucket_num] = [formatted_value] -%}
+                {%- elif formatted_value not in ns.bucket_conditions[bucket_num] %}
+                    {%- do ns.bucket_conditions[bucket_num].append(formatted_value) -%}
+                {%- endif -%}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do partition_conditions.append(partition_key_formatted + " = " + value) -%}
+                {%- do single_partition.append(partition_key_formatted + " = " + value) -%}
             {%- endif -%}
         {%- endfor -%}
-
-        {%- set partition_expression = partition_conditions | join(' and ') -%}
-        {%- if partition_expression not in unique_partition_expressions -%}
-            {%- do unique_partition_expressions.append(partition_expression) -%}
-        {%- endif -%}
-
-        {%- for bucket_num, values in bucket_conditions.items() -%}
-            {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
-            {%- do combined_conditions.append(partition_expression + ' and ' + bucket_condition) -%}
-            {%- set count = bucket_counts.get(bucket_num, 0) + 1 -%}
-            {%- do bucket_counts.update({bucket_num: count}) -%}
-        {%- endfor -%}
-
-        {%- if not bucket_conditions -%}
-            {%- do combined_conditions.append(partition_expression) -%}
+        {%- set single_partition_expression = single_partition | join(' and ') -%}
+        {%- if single_partition_expression not in ns.partitions %}
+            {%- do ns.partitions.append(single_partition_expression) %}
         {%- endif -%}
     {%- endfor -%}
 
-    {%- set total_batches = (unique_partition_expressions | length) * max(bucket_counts.values(), default=1) -%}
-    {%- set partitions_batches = [] -%}
+    {%- set total_batches = ns.partitions | length * ns.bucket_numbers | length -%}
+    {%- set batches_per_partition_limit = (total_batches // athena_partitions_limit) + (total_batches % athena_partitions_limit > 0) -%}
 
-    {%- for i in range((total_batches / athena_partitions_limit) | ceil) -%}
-        {%- set batch_conditions = combined_conditions[i * athena_partitions_limit : (i + 1) * athena_partitions_limit] -%}
-        {%- do partitions_batches.append(batch_conditions | join(' or ')) -%}
+    {%- set partitions_batches = [] -%}
+    {%- for i in range(batches_per_partition_limit) -%}
+        {%- set batch_conditions = [] -%}
+        {%- for partition_expression in ns.partitions -%}
+            {%- for bucket_num in ns.bucket_numbers -%}
+                {%- set bucket_condition = ns.bucket_column + " IN (" + ns.bucket_conditions[bucket_num] | join(", ") + ")" -%}
+                {%- set combined_condition = "(" + partition_expression + ' and ' + bucket_condition + ")" -%}
+                {%- do batch_conditions.append(combined_condition) -%}
+            {%- endfor -%}
+        {%- endfor -%}
+        {%- do partitions_batches.append(batch_conditions[i * athena_partitions_limit : (i + 1) * athena_partitions_limit] | join(' or ')) -%}
     {%- endfor -%}
 
     {{ return(partitions_batches) }}
