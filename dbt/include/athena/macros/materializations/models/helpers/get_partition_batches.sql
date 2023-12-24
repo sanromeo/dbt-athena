@@ -32,7 +32,7 @@
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
                 {% if bucket_num not in ns.bucket_values_map %}
                     {% do ns.bucket_values_map.update({bucket_num: [formatted_value]}) %}
-                {% elif formatted_value not in ns.bucket_values_map[bucket_num] %}
+                {% else %}
                     {% do ns.bucket_values_map[bucket_num].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
