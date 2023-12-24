@@ -32,11 +32,12 @@
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
 
-                {%- if bucket_num not in bucket_conditions %}
-                    {%- set bucket_conditions[bucket_num] = [formatted_value] -%}
-                {%- else %}
-                    {%- do bucket_conditions[bucket_num].append(formatted_value) %}
-                {%- endif %}
+                {# Update the bucket_conditions dictionary #}
+                {% if bucket_num not in bucket_conditions %}
+                    {% do bucket_conditions.update({bucket_num: [formatted_value]}) %}
+                {% else %}
+                    {% do bucket_conditions[bucket_num].append(formatted_value) %}
+                {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
