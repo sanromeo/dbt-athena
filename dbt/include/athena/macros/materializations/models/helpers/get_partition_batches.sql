@@ -21,7 +21,7 @@
     {%- for row in rows -%}
         {%- set partition_conditions = [] -%}
         {%- set bucket_values_map = {} -%}
-        {%- set bucket_column = '' -%}
+        {%- set bucket_column = None -%}
 
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
@@ -42,10 +42,12 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_num, values in bucket_values_map.items() -%}
-            {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
-            {%- do partition_conditions.append(bucket_condition) -%}
-        {%- endfor -%}
+        {%- if bucket_column -%}
+            {%- for bucket_num, values in bucket_values_map.items() -%}
+                {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
+                {%- do partition_conditions.append(bucket_condition) -%}
+            {%- endfor -%}
+        {%- endif -%}
 
         {%- set single_partition_expression = partition_conditions | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
