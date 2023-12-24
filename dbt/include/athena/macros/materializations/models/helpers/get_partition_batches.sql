@@ -20,6 +20,8 @@
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
+        {%- set partition_conditions = [] -%}
+        {%- set bucket_conditions = [] -%}
 
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
@@ -38,21 +40,30 @@
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do single_partition.append(partition_key_formatted + " = " + value) -%}
+                {%- do partition_conditions.append(partition_key_formatted + " = " + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
+        {%- set partition_expression = partition_conditions | join(' and ') -%}
+
         {%- for bucket_num, values in ns.bucket_conditions.items() -%}
             {%- set bucket_condition = ns.bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
-            {%- do single_partition.append(bucket_condition) -%}
+            {%- do bucket_conditions.append(bucket_condition) -%}
         {%- endfor -%}
 
-        {%- set single_partition_expression = single_partition | join(' and ') -%}
+        {%- for condition in bucket_conditions -%}
+            {%- do single_partition.append('(' + partition_expression + ' and ' + condition + ')') -%}
+        {%- endfor -%}
+
+        {%- if not bucket_conditions -%}
+            {%- do single_partition.append('(' + partition_expression + ')') -%}
+        {%- endif -%}
+
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
         {%- if batch_number not in partitions_batches %}
             {% do partitions_batches.append([]) %}
         {% endif %}
-        {%- do partitions_batches[batch_number].append('(' + single_partition_expression + ')') -%}
+        {%- do partitions_batches[batch_number].extend(single_partition) -%}
     {%- endfor -%}
 
     {%- set result_batches = [] -%}
