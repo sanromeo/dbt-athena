@@ -16,10 +16,11 @@
     {%- set rows = table.rows -%}
     {%- set partitions = {} -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
-    {%- set bucket_values = {} -%}
+    {%- set bucket_map = {} -%}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
+        {%- set bucket_conditions = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- if 'bucket(' in partition_key -%}
@@ -27,10 +28,10 @@
                 {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {% if bucket_num not in bucket_values %}
-                    {% do bucket_values.update({bucket_num: {'column': bucket_column, 'values': [formatted_value]}}) %}
-                {% elif formatted_value not in bucket_values[bucket_num]['values'] %}
-                    {% do bucket_values[bucket_num]['values'].append(formatted_value) %}
+                {% if bucket_num not in bucket_map %}
+                    {% do bucket_map.update({bucket_num: {'column': bucket_column, 'values': [formatted_value]}}) %}
+                {% elif formatted_value not in bucket_map[bucket_num]['values'] %}
+                    {% do bucket_map[bucket_num]['values'].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
@@ -39,20 +40,21 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- set single_partition_expression = single_partition | join(' and ') -%}
+        {# Process bucket conditions for the current row #}
+        {%- for bucket_num, bucket_info in bucket_map.items() -%}
+            {%- set unique_values = bucket_info['values'] | unique | join(", ") -%}
+            {%- do bucket_conditions.append(bucket_info['column'] + " IN (" + unique_values + ")") -%}
+        {%- endfor -%}
+
+        {# Combine partition conditions with bucket conditions #}
+        {%- set combined_conditions = single_partition + bucket_conditions -%}
+        {%- set combined_expression = combined_conditions | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
         {% if batch_number not in partitions %}
             {% do partitions.update({batch_number: []}) %}
         {% endif %}
-        {% do partitions[batch_number].append(single_partition_expression) %}
+        {% do partitions[batch_number].append('(' + combined_expression + ')') %}
 
-        {# Add bucket conditions to the partitions #}
-        {%- for bucket_num, bucket_info in bucket_values.items() -%}
-            {%- if batch_number in partitions %}
-                {%- set unique_values = bucket_info['values'] | unique | join(", ") -%}
-                {%- do partitions[batch_number].append(bucket_info['column'] + " IN (" + unique_values + ")") -%}
-            {%- endif -%}
-        {%- endfor -%}
     {%- endfor -%}
 
     {# Combine partitions into batches #}
