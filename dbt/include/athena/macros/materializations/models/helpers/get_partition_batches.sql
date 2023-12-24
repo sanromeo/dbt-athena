@@ -16,7 +16,7 @@
     {%- set rows = table.rows -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions_batches = [] -%}
-    {%- set bucket_conditions = {} -%}
+    {%- set ns = namespace(bucket_conditions={}, bucket_column=None) -%}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
@@ -26,14 +26,14 @@
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
 
             {%- if bucket_match -%}
-                {%- set bucket_column = bucket_match[1] -%}
+                {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
 
-                {% if bucket_num not in bucket_conditions %}
-                    {% do bucket_conditions.update({bucket_num: [formatted_value]}) %}
+                {% if bucket_num not in ns.bucket_conditions %}
+                    {% do ns.bucket_conditions.update({bucket_num: [formatted_value]}) %}
                 {% else %}
-                    {% do bucket_conditions[bucket_num].append(formatted_value) %}
+                    {% do ns.bucket_conditions[bucket_num].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
@@ -42,8 +42,8 @@
             {%- endif -%}
         {%- endfor -%}
 
-        {%- for bucket_num, values in bucket_conditions.items() -%}
-            {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
+        {%- for bucket_num, values in ns.bucket_conditions.items() -%}
+            {%- set bucket_condition = ns.bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
             {%- do single_partition.append(bucket_condition) -%}
         {%- endfor -%}
 
