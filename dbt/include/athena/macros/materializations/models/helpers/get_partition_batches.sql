@@ -15,50 +15,52 @@
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
-    {%- set partitions = {} -%}
     {%- set partitions_batches = [] -%}
-    {%- set ns = namespace(bucket_column=None, bucket_values_map={}) -%}
+    {%- set bucket_conditions = {} -%}
 
     {%- for row in rows -%}
-        {%- set partition_conditions = [] -%}
-        {%- set ns.bucket_values_map = {} -%}
+        {%- set single_partition = [] -%}
 
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
-            {%- if 'bucket(' in partition_key -%}
-                {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
-                {%- set ns.bucket_column = bucket_match[1] -%}
+            {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
+
+            {%- if bucket_match -%}
+                {%- set bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
-                {% if bucket_num not in ns.bucket_values_map %}
-                    {% do ns.bucket_values_map.update({bucket_num: [formatted_value]}) %}
+
+                {% if bucket_num not in bucket_conditions %}
+                    {% do bucket_conditions.update({bucket_num: [formatted_value]}) %}
                 {% else %}
-                    {% do ns.bucket_values_map[bucket_num].append(formatted_value) %}
+                    {% do bucket_conditions[bucket_num].append(formatted_value) %}
                 {% endif %}
             {%- else -%}
                 {%- set value = adapter.format_value_for_partition(col, column_type) -%}
-                {%- set partition_key_formatted = adapter.format_one_partition_key(partition_key) -%}
-                {%- do partition_conditions.append(partition_key_formatted + " = " + value) -%}
+                {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
+                {%- do single_partition.append(partition_key_formatted + " = " + value) -%}
             {%- endif -%}
         {%- endfor -%}
 
-        {%- if ns.bucket_column -%}
-            {%- for bucket_num, values in ns.bucket_values_map.items() -%}
-                {%- set bucket_condition = ns.bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
-                {%- do partition_conditions.append(bucket_condition) -%}
-            {%- endfor -%}
-        {%- endif -%}
+        {%- for bucket_num, values in bucket_conditions.items() -%}
+            {%- set bucket_condition = bucket_column + " IN (" + values | unique | join(", ") + ")" -%}
+            {%- do single_partition.append(bucket_condition) -%}
+        {%- endfor -%}
 
-        {%- set single_partition_expression = partition_conditions | join(' and ') -%}
+        {%- set single_partition_expression = single_partition | join(' and ') -%}
         {%- set batch_number = (loop.index0 / athena_partitions_limit) | int -%}
-        {% if not batch_number in partitions %}
-            {% do partitions.update({batch_number: []}) %}
+        {%- if batch_number not in partitions_batches %}
+            {% do partitions_batches.append([]) %}
         {% endif %}
-        {%- do partitions[batch_number].append('(' + single_partition_expression + ')') -%}
-        {%- if partitions[batch_number] | length == athena_partitions_limit or loop.last -%}
-            {%- do partitions_batches.append(partitions[batch_number] | join(' or ')) -%}
+        {%- do partitions_batches[batch_number].append('(' + single_partition_expression + ')') -%}
+    {%- endfor -%}
+
+    {%- set result_batches = [] -%}
+    {%- for batch in partitions_batches -%}
+        {%- if batch -%}
+            {%- do result_batches.append(batch | join(' or ')) -%}
         {%- endif -%}
     {%- endfor -%}
 
-    {{ return(partitions_batches) }}
+    {{ return(result_batches) }}
 {%- endmacro %}
