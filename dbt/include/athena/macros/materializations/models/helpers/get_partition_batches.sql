@@ -27,7 +27,7 @@
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
                 {%- if bucket_num not in ns.bucket_numbers %}
                     {%- do ns.bucket_numbers.append(bucket_num) %}
-                    {%- set ns.bucket_conditions[bucket_num] = [formatted_value] -%}
+                    {%- do ns.bucket_conditions.update({bucket_num: [formatted_value]}) -%}
                 {%- elif formatted_value not in ns.bucket_conditions[bucket_num] %}
                     {%- do ns.bucket_conditions[bucket_num].append(formatted_value) -%}
                 {%- endif -%}
