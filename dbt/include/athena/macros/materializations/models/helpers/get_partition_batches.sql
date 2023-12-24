@@ -17,11 +17,11 @@
     {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ rows | length) %}
     {%- set partitions = {} -%}
     {%- set partitions_batches = [] -%}
+    {%- set bucket_column = None -%}
 
     {%- for row in rows -%}
         {%- set partition_conditions = [] -%}
         {%- set bucket_values_map = {} -%}
-        {%- set bucket_column = None -%}
 
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
