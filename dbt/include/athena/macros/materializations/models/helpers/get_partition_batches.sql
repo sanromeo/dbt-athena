@@ -20,6 +20,7 @@
         {%- set single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
+            {% do log("COLUMN TYPE: " + column_type) %}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {%- set ns.is_bucketed = true -%}
