@@ -1328,6 +1328,10 @@ class AthenaAdapter(SQLAdapter):
             return f"DATE'{value}'", comp_func
         elif column_type == "timestamp":
             return f"TIMESTAMP'{value}'", comp_func
+        elif column_type == "double":
+            return str(value), comp_func
+        elif column_type == "decimal":
+            return str(value), comp_func
         else:
             # Raise an error for unsupported column types
             raise ValueError(f"Unsupported column type: {column_type}")
