@@ -14,7 +14,7 @@
 
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
-    {%- set ns = namespace(partitions = [], bucket_conditions = {}, bucket_numbers = [], bucket_column = "") -%}
+    {%- set ns = namespace(partitions = [], bucket_conditions = {}, bucket_numbers = [], bucket_column = "", is_bucketed = false) -%}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
@@ -22,6 +22,7 @@
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
+                {%- set ns.is_bucketed = true -%}
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
                 {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
@@ -43,19 +44,27 @@
         {%- endif -%}
     {%- endfor -%}
 
-    {%- set total_batches = ns.partitions | length * ns.bucket_numbers | length -%}
+    {%- if ns.is_bucketed -%}
+        {%- set total_batches = ns.partitions | length * ns.bucket_numbers | length -%}
+    {%- else -%}
+        {%- set total_batches = ns.partitions | length -%}
+    {%- endif -%}
     {%- set batches_per_partition_limit = (total_batches // athena_partitions_limit) + (total_batches % athena_partitions_limit > 0) -%}
 
     {%- set partitions_batches = [] -%}
     {%- for i in range(batches_per_partition_limit) -%}
         {%- set batch_conditions = [] -%}
-        {%- for partition_expression in ns.partitions -%}
-            {%- for bucket_num in ns.bucket_numbers -%}
-                {%- set bucket_condition = ns.bucket_column + " IN (" + ns.bucket_conditions[bucket_num] | join(", ") + ")" -%}
-                {%- set combined_condition = "(" + partition_expression + ' and ' + bucket_condition + ")" -%}
-                {%- do batch_conditions.append(combined_condition) -%}
+        {%- if ns.is_bucketed -%}
+            {%- for partition_expression in ns.partitions -%}
+                {%- for bucket_num in ns.bucket_numbers -%}
+                    {%- set bucket_condition = ns.bucket_column + " IN (" + ns.bucket_conditions[bucket_num] | join(", ") + ")" -%}
+                    {%- set combined_condition = "(" + partition_expression + ' and ' + bucket_condition + ")" -%}
+                    {%- do batch_conditions.append(combined_condition) -%}
+                {%- endfor -%}
             {%- endfor -%}
-        {%- endfor -%}
+        {%- else -%}
+            {%- do batch_conditions.extend(ns.partitions) -%}
+        {%- endif -%}
         {%- do partitions_batches.append(batch_conditions[i * athena_partitions_limit : (i + 1) * athena_partitions_limit] | join(' or ')) -%}
     {%- endfor -%}
 
