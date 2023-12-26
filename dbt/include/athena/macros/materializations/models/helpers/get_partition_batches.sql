@@ -14,7 +14,7 @@
 
     {%- set table = load_result('get_partitions').table -%}
     {%- set rows = table.rows -%}
-    {%- set ns = namespace(partitions = [], bucket_conditions = {}, bucket_numbers = [], bucket_column = "", is_bucketed = false) -%}
+    {%- set ns = namespace(partitions = [], bucket_conditions = {}, bucket_numbers = [], bucket_column = None, is_bucketed = false) -%}
 
     {%- for row in rows -%}
         {%- set single_partition = [] -%}
@@ -25,7 +25,7 @@
                 {%- set ns.is_bucketed = true -%}
                 {%- set ns.bucket_column = bucket_match[1] -%}
                 {%- set bucket_num = adapter.murmur3_hash(col, bucket_match[2] | int) -%}
-                {%- set formatted_value = adapter.format_value_for_partition(col, column_type) -%}
+                {%- set formatted_value, comp_func = adapter.format_value_for_partition(col, column_type) -%}
                 {%- if bucket_num not in ns.bucket_numbers %}
                     {%- do ns.bucket_numbers.append(bucket_num) %}
                     {%- do ns.bucket_conditions.update({bucket_num: [formatted_value]}) -%}
@@ -33,14 +33,14 @@
                     {%- do ns.bucket_conditions[bucket_num].append(formatted_value) -%}
                 {%- endif -%}
             {%- else -%}
-                {%- set value = adapter.format_value_for_partition(col, column_type) -%}
+                {%- set value, comp_func = adapter.format_value_for_partition(col, column_type) -%}
                 {%- set partition_key_formatted = adapter.format_one_partition_key(partitioned_by[loop.index0]) -%}
-                {%- do single_partition.append(partition_key_formatted + " = " + value) -%}
+                {%- do single_partition.append(partition_key_formatted + comp_func + value) -%}
             {%- endif -%}
         {%- endfor -%}
         {%- set single_partition_expression = single_partition | join(' and ') -%}
         {%- if single_partition_expression not in ns.partitions %}
-            {%- do ns.partitions.append(single_partition_expression) %}
+            {%- do ns.partitions.append(single_partition_expression) -%}
         {%- endif -%}
     {%- endfor -%}
 
@@ -65,7 +65,9 @@
         {%- else -%}
             {%- do batch_conditions.extend(ns.partitions) -%}
         {%- endif -%}
-        {%- do partitions_batches.append(batch_conditions[i * athena_partitions_limit : (i + 1) * athena_partitions_limit] | join(' or ')) -%}
+        {%- set start_index = i * athena_partitions_limit -%}
+        {%- set end_index = start_index + athena_partitions_limit -%}
+        {%- do partitions_batches.append(batch_conditions[start_index:end_index] | join(' or ')) -%}
     {%- endfor -%}
 
     {{ return(partitions_batches) }}

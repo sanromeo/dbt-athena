@@ -1267,7 +1267,7 @@ class AthenaAdapter(SQLAdapter):
 
     @available
     def format_one_partition_key(self, partition_key: str) -> str:
-        """Check if partition key uses Iceberg hidden partitioning"""
+        """Check if partition key uses Iceberg hidden partitioning or bucket partitioning"""
         hidden = re.search(r"^(hour|day|month|year)\((.+)\)", partition_key.lower())
         bucket = re.search(r"bucket\((.+),", partition_key.lower())
         if hidden:
