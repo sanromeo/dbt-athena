@@ -1318,7 +1318,7 @@ class AthenaAdapter(SQLAdapter):
         if value is None:
             return "null"
         elif column_type == "integer":
-            return value
+            return str(value)
         elif column_type == "string":
             # Properly escape single quotes in the string value
             escaped_value = str(value).replace("'", "''")
