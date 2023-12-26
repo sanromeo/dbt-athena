@@ -1301,7 +1301,7 @@ class AthenaAdapter(SQLAdapter):
         elif isinstance(value, (datetime, date)):  # date, time, timestamp, timestampz
             timestamp = int(value.timestamp()) if isinstance(value, datetime) else int(value.strftime("%s"))
             hash_value = mmh3.hash(struct.pack("<q", timestamp))
-        elif isinstance(value, (str, bytes)):  # string, fixed, binary
+        elif isinstance(value, (str, bytes)):  # string, binary
             hash_value = mmh3.hash(value)
         elif isinstance(value, Decimal):  # decimal
             hash_value = mmh3.hash(self._decimal_to_bytes(value))
@@ -1318,7 +1318,7 @@ class AthenaAdapter(SQLAdapter):
         if value is None:
             return "null"
         elif column_type == "integer":
-            return str(value)
+            return value
         elif column_type == "string":
             # Properly escape single quotes in the string value
             escaped_value = str(value).replace("'", "''")
