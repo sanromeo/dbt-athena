@@ -20,7 +20,6 @@
         {%- set single_partition = [] -%}
         {%- for col, partition_key in zip(row, partitioned_by) -%}
             {%- set column_type = adapter.convert_type(table, loop.index0) -%}
-            {% do log("COLUMN TYPE: " + column_type) %}
             {%- set bucket_match = modules.re.search('bucket\((.+),.+([0-9]+)\)', partition_key) -%}
             {%- if bucket_match -%}
                 {%- set ns.is_bucketed = true -%}
@@ -52,6 +51,9 @@
     {%- endif -%}
     {%- set batches_per_partition_limit = (total_batches // athena_partitions_limit) + (total_batches % athena_partitions_limit > 0) -%}
 
+    {# Log the total number of partitions #}
+    {% do log('TOTAL PARTITIONS TO PROCESS: ' ~ total_batches) %}
+
     {%- set partitions_batches = [] -%}
     {%- for i in range(batches_per_partition_limit) -%}
         {%- set batch_conditions = [] -%}
@@ -72,4 +74,5 @@
     {%- endfor -%}
 
     {{ return(partitions_batches) }}
+
 {%- endmacro %}

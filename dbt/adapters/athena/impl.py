@@ -11,7 +11,7 @@ from textwrap import dedent
 from threading import Lock
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 from urllib.parse import urlparse
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import agate
 import mmh3
@@ -618,7 +618,7 @@ class AthenaAdapter(SQLAdapter):
                     "MaxResults": 100,
                 }
                 # If the catalog is `awsdatacatalog` we don't need to pass CatalogId as boto3
-                # infers it from the account ID.
+                # infers it from the account Id.
                 catalog_id = get_catalog_id(data_catalog)
                 if catalog_id:
                     kwargs["CatalogId"] = catalog_id
@@ -1283,10 +1283,8 @@ class AthenaAdapter(SQLAdapter):
         elif isinstance(value, (datetime, date)):  # date, time, timestamp, timestampz
             timestamp = int(value.timestamp()) if isinstance(value, datetime) else int(value.strftime("%s"))
             hash_value = mmh3.hash(struct.pack("<q", timestamp))
-        elif isinstance(value, (str, bytes)):  # string, binary
+        elif isinstance(value, (str, bytes)):  # string
             hash_value = mmh3.hash(value)
-        elif isinstance(value, UUID):  # uuid
-            hash_value = mmh3.hash(value.bytes)
         else:
             raise TypeError(f"Need to add support data type for hashing: {type(value)}")
 
