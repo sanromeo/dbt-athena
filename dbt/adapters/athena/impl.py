@@ -1278,6 +1278,7 @@ class AthenaAdapter(SQLAdapter):
 
     @available
     def murmur3_hash(self, value: Any, num_buckets: int) -> Any:
+        """Computes a hash for the given value using the MurmurHash3 algorithm and returns a bucket number."""
         if isinstance(value, int):  # int, long
             hash_value = mmh3.hash(struct.pack("<q", value))
         elif isinstance(value, (datetime, date)):  # date, time, timestamp, timestampz
