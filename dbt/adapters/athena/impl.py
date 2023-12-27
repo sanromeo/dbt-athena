@@ -6,7 +6,6 @@ import struct
 import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal, DecimalTuple
 from itertools import chain
 from textwrap import dedent
 from threading import Lock
@@ -122,7 +121,7 @@ class AthenaConfig(AdapterConfig):
 class AthenaAdapter(SQLAdapter):
     BATCH_CREATE_PARTITION_API_LIMIT = 100
     BATCH_DELETE_PARTITION_API_LIMIT = 25
-    INTEGER_MAX_VALUE_SIGNED_32_BIT = 0x7FFFFFFF
+    INTEGER_MAX_VALUE_32_BIT_SIGNED = 0x7FFFFFFF
 
     ConnectionManager = AthenaConnectionManager
     Relation = AthenaRelation
@@ -150,13 +149,8 @@ class AthenaAdapter(SQLAdapter):
 
     @classmethod
     def convert_number_type(cls, agate_table: agate.Table, col_idx: int) -> str:
-        decimals, scale = agate_table.aggregate(agate.MaxPrecision(col_idx)), agate_table.aggregate(
-            agate.MaxScale(col_idx)
-        )
-        if decimals:
-            return "decimal" if scale else "double"
-        else:
-            return "integer"
+        decimals = agate_table.aggregate(agate.MaxPrecision(col_idx))
+        return "double" if decimals else "integer"
 
     @classmethod
     def convert_datetime_type(cls, agate_table: agate.Table, col_idx: int) -> str:
@@ -1282,23 +1276,6 @@ class AthenaAdapter(SQLAdapter):
         else:
             return partition_key.lower()
 
-    @staticmethod
-    def _decimal_to_bytes(value: Decimal) -> bytes:
-        dtuple: DecimalTuple = value.normalize().as_tuple()
-        digits, exponent = dtuple.digits, dtuple.exponent
-
-        if isinstance(exponent, int):
-            decimal_str = "".join(map(str, digits))
-            if exponent < 0:
-                decimal_str = decimal_str[:exponent] + "." + decimal_str[exponent:]
-            elif exponent > 0:
-                decimal_str = decimal_str + ("0" * exponent)
-        else:
-            # Handle special decimal values (NaN, sNaN, Infinity)
-            decimal_str = str(value)
-
-        return decimal_str.encode()
-
     @available
     def murmur3_hash(self, value: Any, num_buckets: int) -> Any:
         if isinstance(value, int):  # int, long
@@ -1308,14 +1285,12 @@ class AthenaAdapter(SQLAdapter):
             hash_value = mmh3.hash(struct.pack("<q", timestamp))
         elif isinstance(value, (str, bytes)):  # string, binary
             hash_value = mmh3.hash(value)
-        elif isinstance(value, Decimal):  # decimal
-            hash_value = mmh3.hash(self._decimal_to_bytes(value))
         elif isinstance(value, UUID):  # uuid
             hash_value = mmh3.hash(value.bytes)
         else:
             raise TypeError(f"Need to add support data type for hashing: {type(value)}")
 
-        return (hash_value & self.INTEGER_MAX_VALUE_SIGNED_32_BIT) % num_buckets
+        return (hash_value & self.INTEGER_MAX_VALUE_32_BIT_SIGNED) % num_buckets
 
     @available
     def format_value_for_partition(self, value: str, column_type: str) -> Tuple[str, str]:
@@ -1333,10 +1308,6 @@ class AthenaAdapter(SQLAdapter):
             return f"DATE'{value}'", comp_func
         elif column_type == "timestamp":
             return f"TIMESTAMP'{value}'", comp_func
-        elif column_type == "double":
-            return str(value), comp_func
-        elif column_type == "decimal":
-            return str(value), comp_func
         else:
             # Raise an error for unsupported column types
             raise ValueError(f"Unsupported column type: {column_type}")
