@@ -150,8 +150,13 @@ class AthenaAdapter(SQLAdapter):
 
     @classmethod
     def convert_number_type(cls, agate_table: agate.Table, col_idx: int) -> str:
-        decimals = agate_table.aggregate(agate.MaxPrecision(col_idx))
-        return "double" if decimals else "integer"
+        decimals, scale = agate_table.aggregate(agate.MaxPrecision(col_idx)), agate_table.aggregate(
+            agate.MaxScale(col_idx)
+        )
+        if decimals:
+            return "decimal" if scale else "double"
+        else:
+            return "integer"
 
     @classmethod
     def convert_datetime_type(cls, agate_table: agate.Table, col_idx: int) -> str:
